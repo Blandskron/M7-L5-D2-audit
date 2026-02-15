@@ -1,0 +1,5 @@
+<h2>Listado SQL RAW</h2>
+
+{% for log in logs %}
+    <p>{{ log.user }} - {{ log.severity }} - {{ log.created_at }}</p>
+{% endfor %}

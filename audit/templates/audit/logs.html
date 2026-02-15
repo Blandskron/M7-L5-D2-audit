@@ -1,0 +1,12 @@
+<h2>Listado ORM</h2>
+
+{% for log in page_obj %}
+    <p>{{ log.user }} - {{ log.severity }} - {{ log.created_at }}</p>
+{% endfor %}
+
+<hr>
+
+<h3>Métricas</h3>
+{% for m in metrics %}
+    <p>{{ m.severity }}: {{ m.total }}</p>
+{% endfor %}
