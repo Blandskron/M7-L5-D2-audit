@@ -1,6 +1,8 @@
 from django.urls import path
 from . import views
 
+app_name = "audit"
+
 urlpatterns = [
     path("logs/", views.logs_orm_view, name="logs_orm"),
     path("logs/sql/", views.logs_sql_view, name="logs_sql"),

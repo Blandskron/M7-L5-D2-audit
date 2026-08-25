@@ -1,12 +1,24 @@
-<h2>Listado ORM</h2>
+<h1>Aula de auditoría: ORM</h1>
+<p>Filtros con ORM, <code>defer(&quot;message&quot;)</code>, anotaciones y paginación.</p>
+<p><a href="{% url 'audit:logs_sql' %}">Ver SQL raw()</a> · <a href="{% url 'audit:logs_crud_sql' %}">Ver CRUD SQL</a> · <a href="{% url 'audit:logs_procedure' %}">Ejecutar procedimiento</a></p>
 
+<form method="get">
+  <label>Usuario <input name="user" value="{{ filters.user }}"></label>
+  <label>Severidad <select name="severity"><option value="">Todas</option>{% for value, label in severities %}<option value="{{ value }}" {% if filters.severity == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+  <label>Texto <input name="text" value="{{ filters.text }}"></label>
+  <label>Desde <input type="date" name="start" value="{{ filters.start }}"></label>
+  <label>Hasta <input type="date" name="end" value="{{ filters.end }}"></label>
+  <button>Filtrar</button>
+</form>
+
+<h2>Registros</h2>
 {% for log in page_obj %}
-    <p>{{ log.user }} - {{ log.severity }} - {{ log.created_at }}</p>
-{% endfor %}
+  <p>#{{ log.id }} — {{ log.user }} — {{ log.severity }} — {{ log.action }} — {{ log.created_at }}</p>
+{% empty %}<p>No hay registros para esos filtros.</p>{% endfor %}
 
-<hr>
+{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Anterior</a>{% endif %}
+<span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+{% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Siguiente</a>{% endif %}
 
-<h3>Métricas</h3>
-{% for m in metrics %}
-    <p>{{ m.severity }}: {{ m.total }}</p>
-{% endfor %}
+<h2>Anotación: total por severidad</h2>
+{% for metric in metrics %}<p>{{ metric.severity }}: {{ metric.total }}</p>{% empty %}<p>Sin métricas.</p>{% endfor %}

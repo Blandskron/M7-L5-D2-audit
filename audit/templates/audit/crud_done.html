@@ -1,1 +1,5 @@
-<h2>Operaciones CRUD SQL ejecutadas correctamente.</h2>
+<h1>CRUD SQL con conexión y cursor</h1>
+<p>El ejemplo inserta un registro, lo actualiza y lo elimina en una única transacción. No modifica registros preexistentes.</p>
+{% for message in messages %}<p>{{ message }}</p>{% endfor %}
+<form method="post">{% csrf_token %}<button>Ejecutar INSERT → UPDATE → DELETE</button></form>
+<p><a href="{% url 'audit:logs_orm' %}">Volver al ORM</a></p>

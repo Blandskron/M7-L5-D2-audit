@@ -1,5 +1,9 @@
-<h2>Listado SQL RAW</h2>
-
-{% for log in logs %}
-    <p>{{ log.user }} - {{ log.severity }} - {{ log.created_at }}</p>
-{% endfor %}
+<h1>Aula de auditoría: SQL con raw()</h1>
+<p>La consulta selecciona <code>id</code> y mapea cada fila a <code>AuditLog</code>; los filtros se pasan como parámetros seguros.</p>
+<p><a href="{% url 'audit:logs_orm' %}">Volver al ORM</a></p>
+<form method="get">
+  <label>Severidad <select name="severity">{% for value, label in severities %}<option value="{{ value }}" {% if severity == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+  <label>Días <input type="number" name="days" min="1" max="365" value="{{ days }}"></label>
+  <button>Consultar</button>
+</form>
+{% for log in logs %}<p>#{{ log.id }} — {{ log.user }} — {{ log.severity }} — {{ log.message }} — {{ log.created_at }}</p>{% empty %}<p>No se encontraron registros.</p>{% endfor %}

@@ -1,222 +1,76 @@
-## Tutorial paso a paso — Buscador de Auditoría y Bitácora (Django + PostgreSQL)
+# Aula Django: consultas ORM y SQL de auditoría
 
----
+Aplicación educativa que resuelve el problema de buscar, resumir y mantener una bitácora de eventos. Usa Django con PostgreSQL y expone ejemplos navegables de ORM, SQL parametrizado, CRUD mediante cursor e invocación de procedimientos almacenados.
 
-### 1) Crear entorno, instalar dependencias y crear proyecto
+## Resultados de aprendizaje cubiertos
 
-```bash
-python -m venv venv
-venv\Scripts\activate
-python -m pip install --upgrade pip
+| Requisito | Implementación verificable |
+| --- | --- |
+| 5.1 Consultas ORM filtradas | `/audit/logs/`: `filter()`, `icontains`, rangos de fecha, `defer()`, paginación y `Count()` |
+| 5.2 Recuperación SQL con filtros | `/audit/logs/sql/`: `AuditLog.objects.raw()` con `%s` y parámetros separados |
+| Mapeo al modelo y parámetros `raw()` | El `SELECT` incluye `id` y las columnas de `AuditLog`; los parámetros son `[severity, since]` |
+| Índices | `db_index` y los índices compuesto `user + severity` y temporal `created_at` en el modelo |
+| 5.3 CRUD SQL | `/audit/logs/crud-sql/` ejecuta INSERT, UPDATE y DELETE con `connection.cursor()` y transacción |
+| SQL personalizado, conexión y cursor | Consultas directas protegidas por parámetros y `transaction.atomic()` |
+| Procedimientos almacenados | `/audit/logs/procedure/` usa `CALL sp_register_audit(...)` y consulta la función de resumen |
 
-pip install django psycopg2-binary faker
-
-django-admin startproject config .
-python manage.py startapp audit
-```
-
----
-
-### 2) Configurar PostgreSQL en `settings.py`
-
-```python
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "audit_db",
-        "USER": "postgres",
-        "PASSWORD": "tu_password",
-        "HOST": "127.0.0.1",
-        "PORT": "5432",
-        "CONN_MAX_AGE": 600,
-    }
-}
-
-INSTALLED_APPS = [
-    # ...
-    "audit",
-]
-```
-
----
-
-### 3) Definir el modelo con índices: `audit/models.py`
-
-* Tabla: `audit_log`
-* Índices: `user`, `severity`, `created_at`, y compuesto `user + severity`
-
-(Usa el `models.py` que ya implementaste.)
-
----
-
-### 4) Crear y aplicar migraciones
+## Inicio rápido con Docker
 
 ```bash
-python manage.py makemigrations
+copy .env.example .env
+docker compose up --build
+```
+
+Abre `http://localhost:8000/audit/logs/` y el administrador en `http://localhost:8000/admin/`. En el primer arranque el `entrypoint.sh` aplica migraciones, instala `audit/sql/audit_procedures.sql`, recopila estáticos y crea el superusuario con las variables `DJANGO_SUPERUSER_*`. Cambia las credenciales de `.env` antes de usarlo fuera de desarrollo.
+
+Para detenerlo conservando datos: `docker compose down`. Para eliminar también el volumen de PostgreSQL: `docker compose down -v`.
+
+## Rutas del aula
+
+| Ruta | Demostración |
+| --- | --- |
+| `/audit/logs/?user=ana&severity=ERROR&text=failed&start=2026-01-01&end=2026-12-31` | Filtros ORM y recuperación paginada |
+| `/audit/logs/sql/?severity=ERROR&days=30` | SQL `raw()` parametrizado y mapeado al modelo |
+| `/audit/logs/crud-sql/` | Formulario POST para ejecutar el CRUD SQL aislado |
+| `/audit/logs/procedure/` | `CALL` a procedimiento y resultado de función SQL |
+
+El CRUD solo actúa sobre el registro de demostración que acaba de insertar; así no destruye datos existentes. Los valores de URL nunca se concatenan en una sentencia SQL.
+
+## Ejecución sin Docker
+
+Necesitas PostgreSQL 16+ y Python 3.12+.
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+set POSTGRES_PASSWORD=tu_clave
 python manage.py migrate
-```
-
----
-
-### 5) Habilitar administración: `audit/admin.py` + superusuario
-
-```bash
+python manage.py install_audit_procedures
 python manage.py createsuperuser
+python manage.py load_massive_logs 1000
+python manage.py runserver
 ```
 
-Panel:
+## Índices y rendimiento
 
-* `http://127.0.0.1:8000/admin/`
-
----
-
-### 6) Implementar endpoints: `audit/views.py`
-
-Implementa estas rutas:
-
-* `logs_orm_view`: filtros ORM, exclusión de campos, paginación, métricas con anotaciones
-* `logs_sql_view`: recuperación con `raw()` y parámetros
-* `logs_crud_sql_view`: INSERT/UPDATE/DELETE con cursor
-* `logs_procedure_view`: invocación a procedimiento almacenado
-
-(Usa el `views.py` que ya definiste.)
-
----
-
-### 7) Registrar rutas: `audit/urls.py` + `config/urls.py`
-
-**`audit/urls.py`** (ya lo tienes)
-
-En **`config/urls.py`** agrega:
-
-```python
-from django.urls import path, include
-
-urlpatterns = [
-    path("audit/", include("audit.urls")),
-]
-```
-
----
-
-### 8) Crear templates mínimos
-
-Estructura:
-
-```
-audit/templates/audit/
-  logs.html
-  logs_sql.html
-  crud_done.html
-  procedure.html
-```
-
-* `logs.html`: listado paginado + métricas
-* `logs_sql.html`: listado desde raw SQL
-* `crud_done.html`: confirmación de CRUD SQL
-* `procedure.html`: salida del procedimiento
-
-(Usa los HTML mínimos que ya dejaste listos.)
-
----
-
-### 9) Crear comando para carga masiva
-
-Estructura:
-
-```
-audit/management/
-  __init__.py
-  commands/
-    __init__.py
-    load_massive_logs.py
-```
-
-En `load_massive_logs.py`:
-
-* inserción masiva con `executemany`
-* columna `"user"` entre comillas dobles en el SQL (PostgreSQL reserva `user`)
-
----
-
-### 10) Cargar datos masivos
-
-```bash
-python manage.py load_massive_logs 100000
-```
-
----
-
-### 11) Crear función en PostgreSQL (resumen por severidad)
-
-Ejecutar en PostgreSQL:
-
-```sql
-CREATE OR REPLACE FUNCTION sp_audit_summary()
-RETURNS TABLE(severity VARCHAR, total BIGINT)
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT severity, COUNT(*)
-    FROM audit_log
-    GROUP BY severity;
-END;
-$$ LANGUAGE plpgsql;
-```
-
----
-
-### 12) Probar endpoints
-
-#### 12.1 Logs con ORM (filtros + paginación + métricas)
-
-* `http://127.0.0.1:8000/audit/logs/`
-
-Parámetros:
-
-* `?user=ana`
-* `?severity=ERROR`
-* `?text=failed`
-* `?page=2`
-
-#### 12.2 Logs con SQL `raw()` parametrizado
-
-* `http://127.0.0.1:8000/audit/logs/sql/?severity=ERROR`
-
-#### 12.3 CRUD mediante SQL directo (cursor)
-
-* `http://127.0.0.1:8000/audit/logs/crud-sql/`
-
-#### 12.4 Resumen desde función (callproc)
-
-* `http://127.0.0.1:8000/audit/logs/procedure/`
-
----
-
-### 13) Verificar uso de índices en PostgreSQL
+El índice compuesto favorece búsquedas por usuario y severidad; el temporal ordena/filtra auditorías recientes. En PostgreSQL se puede comprobar el plan con:
 
 ```sql
 EXPLAIN ANALYZE
-SELECT *
-FROM audit_log
-WHERE severity = 'ERROR';
+SELECT * FROM audit_log
+WHERE "user" = 'ana' AND severity = 'ERROR'
+ORDER BY created_at DESC;
 ```
 
-Si los índices están funcionando, el plan mostrará un `Index Scan` o equivalente.
+La elección entre `Index Scan` y `Seq Scan` depende del volumen y de la selectividad; el planificador decide la alternativa adecuada.
 
----
+## Pruebas
 
-## Checklist de funcionalidades implementadas
+Con la base PostgreSQL iniciada:
 
-* Consultas filtradas con ORM
-* Recuperación por SQL con `raw()` + parámetros
-* CRUD con SQL directo usando cursor
-* Consultas personalizadas con SQL
-* Mapeo de resultados al modelo
-* Índices y búsquedas optimizadas
-* Exclusión de campos (`defer`/`only`)
-* Anotaciones y agregaciones (`Count`, agrupaciones)
-* Conexión y cursores (`connection.cursor()`)
-* Ejecución de función/procedimiento (`callproc`)
-* Carga masiva de datos para alto volumen
+```bash
+docker compose run --rm web python manage.py test
+```
 
+El archivo SQL de procedimientos se puede revisar en `audit/sql/audit_procedures.sql`. `procedimientoAlmacenado.sql` se conserva como acceso rápido al mismo material.

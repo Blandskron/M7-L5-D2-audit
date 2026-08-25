@@ -1,5 +1,4 @@
-<h2>Resultado Procedimiento</h2>
-
-{% for row in result %}
-    <p>{{ row }}</p>
-{% endfor %}
+<h1>Procedimiento almacenado PostgreSQL</h1>
+<p>Se ejecutó <code>CALL sp_register_audit(...)</code>. Después, la función <code>sp_audit_summary()</code> devuelve el resumen.</p>
+{% for severity, total in result %}<p>{{ severity }}: {{ total }}</p>{% empty %}<p>No hay registros.</p>{% endfor %}
+<p><a href="{% url 'audit:logs_orm' %}">Volver al ORM</a></p>

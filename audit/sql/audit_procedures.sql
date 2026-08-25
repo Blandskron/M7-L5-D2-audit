@@ -1,4 +1,4 @@
--- Archivo de consulta rápida. La fuente usada por Django está en audit/sql/audit_procedures.sql.
+-- PostgreSQL: el procedimiento registra una auditoría y la función devuelve un conjunto.
 CREATE OR REPLACE PROCEDURE sp_register_audit(
     p_user VARCHAR(100), p_action VARCHAR(255), p_severity VARCHAR(10), p_message TEXT
 )
@@ -15,7 +15,13 @@ RETURNS TABLE(severity VARCHAR, total BIGINT)
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    RETURN QUERY SELECT al.severity::VARCHAR, COUNT(*)::BIGINT
-    FROM audit_log AS al GROUP BY al.severity ORDER BY COUNT(*) DESC;
+    RETURN QUERY
+    SELECT al.severity::VARCHAR, COUNT(*)::BIGINT
+    FROM audit_log AS al
+    GROUP BY al.severity
+    ORDER BY COUNT(*) DESC;
 END;
 $$;
+
+-- Ejemplo para analizar los índices del modelo:
+-- EXPLAIN ANALYZE SELECT * FROM audit_log WHERE severity = 'ERROR';

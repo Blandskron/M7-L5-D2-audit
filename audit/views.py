@@ -1,132 +1,94 @@
-from django.shortcuts import render
-from django.db import connection
-from django.db.models import Count
+"""Vistas didácticas para comparar ORM, SQL parametrizado y procedimientos."""
+
+from datetime import timedelta
+
+from django.contrib import messages
 from django.core.paginator import Paginator
+from django.db import connection, transaction
+from django.db.models import Count
+from django.shortcuts import redirect, render
+from django.utils import timezone
+
 from .models import AuditLog
 
 
-# ============================================================
-# 5.1 CONSULTAS ORM FILTRADAS + ANOTACIONES + EXCLUSIÓN CAMPOS
-# ============================================================
-
 def logs_orm_view(request):
-    """
-    Búsqueda optimizada usando ORM:
-    - Filtros por usuario
-    - Severidad
-    - Rango de fechas
-    - Texto parcial
-    - Exclusión de campos
-    - Anotaciones
-    - Paginación
-    """
-
-    user = request.GET.get("user")
-    severity = request.GET.get("severity")
-    text = request.GET.get("text")
-
+    """5.1: filtros dinámicos, ``defer()``, anotaciones y paginación con ORM."""
+    user = request.GET.get("user", "")
+    severity = request.GET.get("severity", "")
+    text = request.GET.get("text", "")
+    start = request.GET.get("start", "")
+    end = request.GET.get("end", "")
     queryset = AuditLog.objects.all()
-
-    # Filtros dinámicos
     if user:
         queryset = queryset.filter(user__icontains=user)
-
     if severity:
         queryset = queryset.filter(severity=severity)
-
     if text:
         queryset = queryset.filter(message__icontains=text)
+    if start:
+        queryset = queryset.filter(created_at__date__gte=start)
+    if end:
+        queryset = queryset.filter(created_at__date__lte=end)
 
-    # Exclusión de campo message para optimización
+    # La columna de texto puede ser grande: se excluye del SELECT inicial.
     queryset = queryset.defer("message")
-
-    # Anotación: conteo por severidad
-    metrics = (
-        AuditLog.objects
-        .values("severity")
-        .annotate(total=Count("id"))
-        .order_by("-total")
-    )
-
-    # Paginación
-    paginator = Paginator(queryset.order_by("-created_at"), 10)
-    page_number = request.GET.get("page")
-    page_obj = paginator.get_page(page_number)
-
+    metrics = AuditLog.objects.values("severity").annotate(total=Count("id")).order_by("-total")
+    page_obj = Paginator(queryset.order_by("-created_at"), 10).get_page(request.GET.get("page"))
     return render(request, "audit/logs.html", {
         "page_obj": page_obj,
         "metrics": metrics,
+        "filters": {"user": user, "severity": severity, "text": text, "start": start, "end": end},
+        "severities": AuditLog.SEVERITY_CHOICES,
     })
 
 
-# ============================================================
-# 5.2 CONSULTAS SQL RAW + PARÁMETROS + MAPEADO A MODELO
-# ============================================================
-
 def logs_sql_view(request):
-    """
-    Recuperación usando raw() con parámetros.
-    """
-
+    """5.2: ``raw()`` mapea columnas, incluido ``id``, a instancias de AuditLog."""
     severity = request.GET.get("severity", "ERROR")
-
+    try:
+        days = max(1, min(int(request.GET.get("days", "30")), 365))
+    except ValueError:
+        days = 30
+    since = timezone.now() - timedelta(days=days)
     raw_query = """
-        SELECT *
+        SELECT id, "user", action, severity, message, created_at
         FROM audit_log
-        WHERE severity = %s
+        WHERE severity = %s AND created_at >= %s
         ORDER BY created_at DESC
         LIMIT 20
     """
+    # Los parámetros se pasan aparte: no interpolar valores del request en SQL.
+    logs = AuditLog.objects.raw(raw_query, [severity, since])
+    return render(request, "audit/logs_sql.html", {
+        "logs": logs, "severity": severity, "days": days, "severities": AuditLog.SEVERITY_CHOICES,
+    })
 
-    logs = AuditLog.objects.raw(raw_query, [severity])
-
-    return render(request, "audit/logs_sql.html", {"logs": logs})
-
-
-# ============================================================
-# 5.3 CRUD CON SQL PERSONALIZADO + CONEXIÓN Y CURSOR
-# ============================================================
 
 def logs_crud_sql_view(request):
-    """
-    CRUD ejecutado con SQL manual usando cursor.
-    """
+    """5.3: INSERT, UPDATE y DELETE SQL acotados al registro recién creado."""
+    if request.method != "POST":
+        return render(request, "audit/crud_done.html")
 
-    with connection.cursor() as cursor:
-
-        # INSERT
+    with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute("""
-            INSERT INTO audit_log (user, action, severity, message, created_at)
-            VALUES (%s, %s, %s, %s, NOW())
-        """, ["system", "manual_insert", "INFO", "Registro insertado manualmente"])
+            INSERT INTO audit_log ("user", action, severity, message, created_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP) RETURNING id
+        """, ["sql-demo", "manual_insert", "INFO", "Registro insertado manualmente"])
+        inserted_id = cursor.fetchone()[0]
+        cursor.execute("UPDATE audit_log SET severity = %s WHERE id = %s", ["WARNING", inserted_id])
+        cursor.execute("DELETE FROM audit_log WHERE id = %s", [inserted_id])
 
-        # UPDATE
-        cursor.execute("""
-            UPDATE audit_log
-            SET severity = %s
-            WHERE user = %s
-        """, ["WARNING", "system"])
+    messages.success(request, "INSERT, UPDATE y DELETE ejecutados dentro de una transacción SQL.")
+    return redirect("audit:logs_crud_sql")
 
-        # DELETE
-        cursor.execute("""
-            DELETE FROM audit_log
-            WHERE severity = %s
-        """, ["CRITICAL"])
-
-    return render(request, "audit/crud_done.html")
-
-
-# ============================================================
-# PROCEDIMIENTO ALMACENADO (EJEMPLO)
-# ============================================================
 
 def logs_procedure_view(request):
-    """
-    Invoca procedimiento almacenado que devuelve resumen.
-    """
-
+    """Invoca ``CALL`` a un procedimiento y recupera el resumen desde una función SQL."""
     with connection.cursor() as cursor:
-        cursor.callproc("sp_audit_summary")  # Debe existir en la BD
+        cursor.execute("CALL sp_register_audit(%s, %s, %s, %s)", [
+            "procedure-demo", "procedure_call", "INFO", "Registro creado mediante CALL.",
+        ])
+        cursor.execute("SELECT severity, total FROM sp_audit_summary()")
         result = cursor.fetchall()
-
     return render(request, "audit/procedure.html", {"result": result})
